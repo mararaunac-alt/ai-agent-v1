@@ -4,7 +4,7 @@ from google import genai
 import argparse
 from google.genai import types
 from prompts import system_prompt
-from functions.call_function import available_functions
+from functions.call_function import available_functions, call_function
 
 def main():
 
@@ -27,7 +27,7 @@ def main():
 
     #Wrap prompt in Content/Part structure to support text, images, and other media types
     messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)])]
-    
+
     #Make the API call
     response = client.models.generate_content(
         model="gemini-2.5-flash", 
@@ -36,19 +36,39 @@ def main():
         )
     if response.usage_metadata is None:
         raise RuntimeError("Response usage metadata is None")
+    
+    
     #Handle the response
+    #Handle if the verbose flag is set to print additional information about the API response, including the user prompt, token counts, and function call details. 
+    response_list = []
     if args.verbose:
         print(f"User prompt: {args.user_prompt}")
         print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
         print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
         if response.function_calls:
             for function_call in response.function_calls:
-                print(f"Calling function: {function_call.name}({function_call.args})")
+                function_response = call_function(function_call, verbose=True)
+                if not function_response.parts:
+                    raise Exception("Function call result has no parts")
+                if function_response.parts[0].function_response is None:
+                    raise Exception("Function call result part has no function response")
+                if function_response.parts[0].function_response.response is None:
+                    raise Exception("Function call result part has no function response content")
+                response_list.append(function_response.parts[0])
+                print(f"-> {function_response.parts[0].function_response.response}")
         else: 
             print(response.text)
+    #Handle the case where the verbose flag is not set.
     elif response.function_calls:
         for function_call in response.function_calls:
-            print(f"Calling function: {function_call.name}({function_call.args})")
+            function_response = call_function(function_call)
+            if not function_response.parts:
+                raise Exception("Function call result has no parts")
+            if function_response.parts[0].function_response is None:
+                raise Exception("Function call result part has no function response")
+            if function_response.parts[0].function_response.response is None:
+                raise Exception("Function call result part has no function response content")
+            response_list.append(function_response.parts[0])
     else:
         print(response.text)
 
